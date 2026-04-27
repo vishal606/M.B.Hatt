@@ -392,15 +392,25 @@ body.dark thead th { background: var(--purple-dark); }
 /* ── Footer ─────────────────────────────────────────────────── */
 .footer {
   background: var(--purple-dark); color: rgba(255,255,255,0.8);
-  padding: 3rem 0 1.5rem; margin-top: auto;
+  padding: 4rem 0 2rem; margin-top: auto;
 }
-.footer h4 { color: var(--blue-light); font-family: var(--font-display); margin-bottom: 1rem; }
-.footer a { color: rgba(255,255,255,0.7); font-size: 0.9rem; }
-.footer a:hover { color: var(--blue); }
+.footer h4 { 
+  color: var(--blue-light); 
+  font-family: var(--font-display); 
+  margin-bottom: 1.5rem; 
+  font-size: 1.2rem;
+}
+.footer a { 
+  color: rgba(255,255,255,0.7); 
+  font-size: 0.95rem; 
+  text-decoration: none;
+  transition: all var(--transition);
+}
+.footer a:hover { color: var(--blue-light); padding-left: 5px; }
 .footer-bottom {
-  border-top: 1px solid rgba(255,255,255,0.1); margin-top: 2rem;
-  padding-top: 1.25rem; display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: 0.5rem; font-size: 0.85rem;
+  border-top: 1px solid rgba(255,255,255,0.1); margin-top: 3rem;
+  padding-top: 1.5rem; display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 1rem; font-size: 0.85rem;
 }
 
 /* ── Auth Pages ─────────────────────────────────────────────── */

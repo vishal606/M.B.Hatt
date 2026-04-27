@@ -13,14 +13,14 @@ $navItems = [
 <!-- Desktop Footer -->
 <footer class="footer">
   <div class="container">
-    <div class="grid grid-3 gap-3">
-      <div>
+    <div class="grid grid-4 gap-3">
+      <div style="grid-column: span 1.5">
         <img src="<?= APP_URL ?>/assets/images/logo.png" alt="<?= e($siteName) ?>" style="height:50px;margin-bottom:1rem">
-        <p style="font-size:0.9rem;opacity:.75;line-height:1.7"><?= e(getSetting('site_tagline', 'Your premium destination for digital products.')) ?></p>
+        <p style="font-size:0.9rem;opacity:.75;line-height:1.7;max-width:300px"><?= e(getSetting('site_tagline', 'Your premium destination for digital products.')) ?></p>
       </div>
       <div>
         <h4>Quick Links</h4>
-        <div style="display:flex;flex-direction:column;gap:0.4rem">
+        <div style="display:flex;flex-direction:column;gap:0.6rem">
           <a href="<?= APP_URL ?>">Home</a>
           <a href="<?= APP_URL ?>/products.php">Products</a>
           <a href="<?= APP_URL ?>/faq.php">FAQ</a>
@@ -29,7 +29,7 @@ $navItems = [
       </div>
       <div>
         <h4>Account</h4>
-        <div style="display:flex;flex-direction:column;gap:0.4rem">
+        <div style="display:flex;flex-direction:column;gap:0.6rem">
           <?php if (isLoggedIn()): ?>
             <a href="<?= APP_URL ?>/dashboard.php">My Dashboard</a>
             <a href="<?= APP_URL ?>/orders.php">My Orders</a>

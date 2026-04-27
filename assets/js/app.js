@@ -109,12 +109,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Hero Slider
   const heroSlides = document.querySelectorAll('.hero-slide');
+  console.log('Hero slides found:', heroSlides.length);
   if (heroSlides.length > 1) {
     let heroIndex = 0;
     setInterval(() => {
+      console.log('Changing slide from index:', heroIndex);
       heroSlides[heroIndex].classList.remove('active');
       heroIndex = (heroIndex + 1) % heroSlides.length;
       heroSlides[heroIndex].classList.add('active');
+      console.log('New active slide index:', heroIndex);
     }, 5000);
   }
 });
