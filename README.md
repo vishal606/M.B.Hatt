@@ -197,5 +197,5 @@ Configure SMTP in **Admin → Settings → Email**:
 ---
 
 ## 📄 License
-Built for — MBHaat.com  
+Built for — MB Haat 
 For private/commercial use. All rights reserved.
