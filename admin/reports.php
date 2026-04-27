@@ -1,149 +1,116 @@
 <?php
-$pageTitle = 'Reports';
-include 'includes/header.php';
+require_once __DIR__ . '/../src/init.php';
+requireAdmin();
+$pageTitle = 'Reports — Admin';
 
-// Get date range
-$startDate = isset($_GET['start']) ? $_GET['start'] : date('Y-m-01');
-$endDate = isset($_GET['end']) ? $_GET['end'] : date('Y-m-d');
+$period = sanitize($_GET['period'] ?? 'month');
+$dateFrom = match($period) {
+    'today'  => date('Y-m-d'),
+    'week'   => date('Y-m-d', strtotime('-7 days')),
+    'year'   => date('Y-m-d', strtotime('-1 year')),
+    default  => date('Y-m-d', strtotime('-30 days')),
+};
 
-// Sales report
-$salesStmt = $pdo->prepare("SELECT DATE(created_at) as date, COUNT(*) as orders, SUM(total_amount) as revenue 
-    FROM orders WHERE order_status = 'completed' AND DATE(created_at) BETWEEN ? AND ? 
-    GROUP BY DATE(created_at) ORDER BY date");
-$salesStmt->execute([$startDate, $endDate]);
-$salesData = $salesStmt->fetchAll();
+$revenue    = Database::fetch("SELECT COALESCE(SUM(total),0) as v, COUNT(*) as c FROM orders WHERE payment_status='paid' AND DATE(created_at) >= ?", [$dateFrom]);
+$newUsers   = Database::fetch("SELECT COUNT(*) as v FROM users WHERE DATE(created_at) >= ?", [$dateFrom])['v'];
+$topProds   = Database::fetchAll("SELECT p.title, p.price, COUNT(oi.id) as sales, SUM(oi.price) as revenue FROM order_items oi JOIN orders o ON o.id=oi.order_id JOIN products p ON p.id=oi.product_id WHERE o.payment_status='paid' AND DATE(o.created_at)>=? GROUP BY oi.product_id ORDER BY sales DESC LIMIT 10", [$dateFrom]);
+$byMethod   = Database::fetchAll("SELECT payment_method, COUNT(*) as c, SUM(total) as revenue FROM orders WHERE payment_status='paid' AND DATE(created_at)>=? GROUP BY payment_method ORDER BY revenue DESC", [$dateFrom]);
+$dailySales = Database::fetchAll("SELECT DATE(created_at) as day, COUNT(*) as orders, SUM(total) as revenue FROM orders WHERE payment_status='paid' AND DATE(created_at)>=? GROUP BY DATE(created_at) ORDER BY day", [$dateFrom]);
 
-// Summary stats
-$summaryStmt = $pdo->prepare("SELECT 
-    COUNT(*) as total_orders,
-    SUM(total_amount) as total_revenue,
-    AVG(total_amount) as avg_order,
-    COUNT(DISTINCT user_id) as unique_customers
-    FROM orders WHERE order_status = 'completed' AND DATE(created_at) BETWEEN ? AND ?");
-$summaryStmt->execute([$startDate, $endDate]);
-$summary = $summaryStmt->fetch();
-
-// Top products
-$topProducts = $pdo->prepare("SELECT p.name, COUNT(oi.id) as sales, SUM(oi.product_price) as revenue 
-    FROM order_items oi 
-    JOIN products p ON oi.product_id = p.id 
-    JOIN orders o ON oi.order_id = o.id 
-    WHERE o.order_status = 'completed' AND DATE(o.created_at) BETWEEN ? AND ?
-    GROUP BY p.id ORDER BY sales DESC LIMIT 10");
-$topProducts->execute([$startDate, $endDate]);
-$topProductsData = $topProducts->fetchAll();
+include __DIR__ . '/partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="fw-bold text-brand-purple mb-0">Sales Reports</h4>
-    
-    <form method="GET" action="" class="d-flex gap-2">
-        <input type="date" name="start" class="form-control" value="<?php echo $startDate; ?>">
-        <input type="date" name="end" class="form-control" value="<?php echo $endDate; ?>">
-        <button type="submit" class="btn btn-brand-blue">
-            <i class="fas fa-filter me-1"></i>Filter
-        </button>
-        <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
-            <i class="fas fa-print me-1"></i>Print
-        </button>
-    </form>
+<div class="admin-page-header">
+  <h1>Reports & Analytics</h1>
+  <div style="display:flex;gap:.4rem">
+    <?php foreach (['today'=>'Today','week'=>'7 Days','month'=>'30 Days','year'=>'1 Year'] as $val=>$label): ?>
+    <a href="?period=<?= $val ?>" class="btn <?= $period===$val?'btn-primary':'btn-secondary' ?> btn-sm"><?= $label ?></a>
+    <?php endforeach; ?>
+  </div>
 </div>
 
-<!-- Summary Cards -->
-<div class="row g-4 mb-4">
-    <div class="col-md-3">
-        <div class="card stat-card h-100">
-            <div class="card-body">
-                <h6 class="text-white-50">Total Orders</h6>
-                <h3 class="fw-bold mb-0"><?php echo number_format($summary['total_orders'] ?? 0); ?></h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card h-100" style="background: linear-gradient(135deg, #76D2DB 0%, #36064D 100%);">
-            <div class="card-body">
-                <h6 class="text-white-50">Total Revenue</h6>
-                <h3 class="fw-bold mb-0"><?php echo formatPrice($summary['total_revenue'] ?? 0); ?></h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card h-100" style="background: linear-gradient(135deg, #DA4848 0%, #36064D 100%);">
-            <div class="card-body">
-                <h6 class="text-white-50">Average Order</h6>
-                <h3 class="fw-bold mb-0"><?php echo formatPrice($summary['avg_order'] ?? 0); ?></h3>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card h-100" style="background: linear-gradient(135deg, #F7F6E5 0%, #76D2DB 100%); color: #36064D;">
-            <div class="card-body">
-                <h6 class="opacity-75">Customers</h6>
-                <h3 class="fw-bold mb-0"><?php echo number_format($summary['unique_customers'] ?? 0); ?></h3>
-            </div>
-        </div>
-    </div>
+<!-- Summary -->
+<div class="grid grid-4 gap-2 mb-4">
+  <?php
+  $summaryStats = [
+    ['label'=>'Revenue','value'=>formatPrice($revenue['v']),'icon'=>'💰','color'=>'#36064D'],
+    ['label'=>'Orders','value'=>$revenue['c'],'icon'=>'🛒','color'=>'#4fb8c4'],
+    ['label'=>'New Users','value'=>$newUsers,'icon'=>'👥','color'=>'#c9a84c'],
+    ['label'=>'Avg Order','value'=>$revenue['c']>0?formatPrice($revenue['v']/$revenue['c']):'—','icon'=>'📊','color'=>'#DA4848'],
+  ];
+  foreach ($summaryStats as $s):
+  ?>
+  <div class="stat-card">
+    <div class="stat-card-icon" style="background:<?= $s['color'] ?>22;color:<?= $s['color'] ?>"><?= $s['icon'] ?></div>
+    <div class="stat-card-value"><?= $s['value'] ?></div>
+    <div class="stat-card-label"><?= $s['label'] ?></div>
+  </div>
+  <?php endforeach; ?>
 </div>
 
-<div class="row g-4">
-    <!-- Sales Data -->
-    <div class="col-lg-8">
-        <div class="card admin-card">
-            <div class="card-header">
-                <h5 class="mb-0 fw-bold">Daily Sales</h5>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table admin-table mb-0">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Orders</th>
-                                <th>Revenue</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($salesData as $day): ?>
-                            <tr>
-                                <td><?php echo date('M d, Y', strtotime($day['date'])); ?></td>
-                                <td><?php echo $day['orders']; ?></td>
-                                <td class="fw-bold text-brand-blue"><?php echo formatPrice($day['revenue']); ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php if (empty($salesData)): ?>
-                            <tr>
-                                <td colspan="3" class="text-center text-muted py-4">No data available for selected period</td>
-                            </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+<div class="grid grid-2 gap-3">
+  <!-- Top Products -->
+  <div class="card">
+    <div class="card-header"><h3 style="font-size:1.05rem">Top Selling Products</h3></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Product</th><th>Sales</th><th>Revenue</th></tr></thead>
+        <tbody>
+          <?php foreach ($topProds as $p): ?>
+          <tr>
+            <td>
+              <div style="font-weight:600;font-size:.9rem"><?= e($p['title']) ?></div>
+              <div style="font-size:.75rem;color:var(--text-muted)"><?= formatPrice($p['price']) ?> each</div>
+            </td>
+            <td><span class="badge badge-purple"><?= $p['sales'] ?></span></td>
+            <td style="font-weight:600"><?= formatPrice($p['revenue']) ?></td>
+          </tr>
+          <?php endforeach; ?>
+          <?php if(empty($topProds)): ?><tr><td colspan="3" style="text-align:center;padding:1.5rem;color:var(--text-muted)">No sales data.</td></tr><?php endif; ?>
+        </tbody>
+      </table>
     </div>
-    
-    <!-- Top Products -->
-    <div class="col-lg-4">
-        <div class="card admin-card">
-            <div class="card-header">
-                <h5 class="mb-0 fw-bold">Top Products</h5>
-            </div>
-            <div class="card-body">
-                <?php foreach ($topProductsData as $product): ?>
-                <div class="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
-                    <div>
-                        <span class="fw-bold d-block" style="font-size: 0.9rem;"><?php echo substr($product['name'], 0, 25); ?><?php echo strlen($product['name']) > 25 ? '...' : ''; ?></span>
-                        <small class="text-muted"><?php echo $product['sales']; ?> sales</small>
-                    </div>
-                    <span class="fw-bold text-brand-blue"><?php echo formatPrice($product['revenue']); ?></span>
-                </div>
-                <?php endforeach; ?>
-                <?php if (empty($topProductsData)): ?>
-                <p class="text-center text-muted py-4">No data available</p>
-                <?php endif; ?>
-            </div>
+  </div>
+
+  <!-- By Payment Method -->
+  <div class="card">
+    <div class="card-header"><h3 style="font-size:1.05rem">Revenue by Payment Method</h3></div>
+    <div class="card-body" style="padding:0">
+      <?php foreach ($byMethod as $bm): ?>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.25rem;border-bottom:1px solid var(--border)">
+        <span style="font-weight:600;text-transform:uppercase"><?= e($bm['payment_method']) ?></span>
+        <div style="text-align:right">
+          <div style="font-weight:700;color:var(--purple)"><?= formatPrice($bm['revenue']) ?></div>
+          <div style="font-size:.75rem;color:var(--text-muted)"><?= $bm['c'] ?> orders</div>
         </div>
+      </div>
+      <?php endforeach; ?>
+      <?php if(empty($byMethod)): ?><div style="padding:1.5rem;text-align:center;color:var(--text-muted)">No data.</div><?php endif; ?>
     </div>
+  </div>
 </div>
 
-<?php include 'includes/footer.php'; ?>
+<!-- Daily Sales Table -->
+<div class="card mt-3">
+  <div class="card-header flex-between">
+    <h3 style="font-size:1.05rem">Daily Sales</h3>
+    <span class="text-small text-muted"><?= count($dailySales) ?> days with activity</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Orders</th><th>Revenue</th></tr></thead>
+      <tbody>
+        <?php foreach (array_reverse($dailySales) as $day): ?>
+        <tr>
+          <td><?= date('D, M j, Y', strtotime($day['day'])) ?></td>
+          <td><?= $day['orders'] ?></td>
+          <td style="font-weight:600"><?= formatPrice($day['revenue']) ?></td>
+        </tr>
+        <?php endforeach; ?>
+        <?php if(empty($dailySales)): ?><tr><td colspan="3" style="text-align:center;padding:1.5rem;color:var(--text-muted)">No sales in this period.</td></tr><?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<?php include __DIR__ . '/partials/footer.php'; ?>

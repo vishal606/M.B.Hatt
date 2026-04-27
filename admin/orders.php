@@ -1,173 +1,168 @@
 <?php
-$pageTitle = 'Orders';
-include 'includes/header.php';
+require_once __DIR__ . '/../src/init.php';
+requireAdmin();
 
-// Pagination
-$page = isset($_GET['page']) ? intval($_GET['page']) : 1;
-$perPage = 20;
-$offset = ($page - 1) * $perPage;
+$pageTitle = 'Orders — Admin';
 
-// Filter
-$statusFilter = isset($_GET['status']) ? sanitizeInput($_GET['status']) : '';
-$searchQuery = isset($_GET['search']) ? sanitizeInput($_GET['search']) : '';
+// View single order
+if (isset($_GET['view'])) {
+    $orderId = (int)$_GET['view'];
+    $order   = Database::fetch("SELECT o.*, u.name as user_name, u.email as user_email FROM orders o JOIN users u ON u.id=o.user_id WHERE o.id=?", [$orderId]);
+    if (!$order) { flash('danger','Order not found.'); redirect(APP_URL.'/admin/orders.php'); }
+    $items = Database::fetchAll("SELECT oi.*, p.title FROM order_items oi JOIN products p ON p.id=oi.product_id WHERE oi.order_id=?", [$orderId]);
 
-// Build query
-$query = "SELECT o.*, u.name as user_name FROM orders o JOIN users u ON o.user_id = u.id WHERE 1=1";
-$countQuery = "SELECT COUNT(*) FROM orders o JOIN users u ON o.user_id = u.id WHERE 1=1";
-$params = [];
+    // Update status
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
+        verifyCsrf();
+        $payStatus = sanitize($_POST['payment_status'] ?? '');
+        $ordStatus = sanitize($_POST['status'] ?? '');
+        Database::execute("UPDATE orders SET payment_status=?, status=? WHERE id=?", [$payStatus, $ordStatus, $orderId]);
+        flash('success', 'Order updated.');
+        redirect(APP_URL.'/admin/orders.php?view='.$orderId);
+    }
 
-if (!empty($statusFilter)) {
-    $query .= " AND o.order_status = ?";
-    $countQuery .= " AND o.order_status = ?";
-    $params[] = $statusFilter;
+    include __DIR__ . '/partials/header.php';
+    ?>
+    <div class="admin-page-header">
+      <h1>Order #<?= e($order['order_number']) ?></h1>
+      <a href="<?= APP_URL ?>/admin/orders.php" class="btn btn-secondary">← Orders</a>
+    </div>
+
+    <div class="grid grid-2 gap-3">
+      <div class="card card-body">
+        <h4 style="margin-bottom:1rem">Order Details</h4>
+        <?php
+        $details = [
+          'Customer'    => e($order['user_name']) . ' (' . e($order['user_email']) . ')',
+          'Date'        => date('M j, Y g:i A', strtotime($order['created_at'])),
+          'Payment'     => strtoupper($order['payment_method']),
+          'Transaction' => $order['transaction_id'] ?: 'N/A',
+          'Subtotal'    => formatPrice($order['subtotal']),
+          'Discount'    => formatPrice($order['discount']),
+          'Tax'         => formatPrice($order['tax']),
+          'Total'       => formatPrice($order['total']),
+        ];
+        foreach ($details as $k => $v):
+        ?>
+        <div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.9rem">
+          <span class="text-muted"><?= $k ?></span>
+          <span style="font-weight:600"><?= $v ?></span>
+        </div>
+        <?php endforeach; ?>
+      </div>
+
+      <div class="card card-body">
+        <h4 style="margin-bottom:1rem">Update Status</h4>
+        <form method="POST">
+          <?= csrfField() ?>
+          <div class="form-group">
+            <label class="form-label">Payment Status</label>
+            <select name="payment_status" class="form-control">
+              <?php foreach (['pending','paid','failed','refunded'] as $s): ?>
+              <option value="<?= $s ?>" <?= $order['payment_status']===$s?'selected':'' ?>><?= ucfirst($s) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Order Status</label>
+            <select name="status" class="form-control">
+              <?php foreach (['pending','processing','completed','cancelled','refunded'] as $s): ?>
+              <option value="<?= $s ?>" <?= $order['status']===$s?'selected':'' ?>><?= ucfirst($s) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <button type="submit" name="update_status" class="btn btn-primary">Update Order</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header"><h3 style="font-size:1.05rem">Order Items</h3></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Product</th><th>Price</th><th>Downloads</th><th>Limit</th><th>Expiry</th></tr></thead>
+          <tbody>
+            <?php foreach ($items as $item): ?>
+            <tr>
+              <td><strong><?= e($item['title']) ?></strong></td>
+              <td><?= formatPrice($item['price']) ?></td>
+              <td><?= $item['download_count'] ?></td>
+              <td><?= $item['download_limit'] ?></td>
+              <td><?= $item['download_expiry'] ? date('M j, Y', strtotime($item['download_expiry'])) : 'No expiry' ?></td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <?php
+    include __DIR__ . '/partials/footer.php';
+    exit;
 }
 
-if (!empty($searchQuery)) {
-    $query .= " AND (o.order_number LIKE ? OR u.name LIKE ? OR u.email LIKE ?)";
-    $countQuery .= " AND (o.order_number LIKE ? OR u.name LIKE ? OR u.email LIKE ?)";
-    $params[] = "%$searchQuery%";
-    $params[] = "%$searchQuery%";
-    $params[] = "%$searchQuery%";
-}
+// Orders list
+$search = sanitize($_GET['q'] ?? '');
+$status = sanitize($_GET['status'] ?? '');
+$method = sanitize($_GET['method'] ?? '');
+$where  = ['1=1']; $params = [];
+if ($search) { $where[]="(o.order_number LIKE ? OR u.name LIKE ?)"; $params[]="%$search%"; $params[]="%$search%"; }
+if ($status) { $where[]="o.payment_status=?"; $params[]=$status; }
+if ($method) { $where[]="o.payment_method=?"; $params[]=$method; }
 
-$query .= " ORDER BY o.created_at DESC LIMIT $perPage OFFSET $offset";
+$orders = Database::fetchAll(
+    "SELECT o.*, u.name as user_name FROM orders o JOIN users u ON u.id=o.user_id WHERE " . implode(' AND ',$where) . " ORDER BY o.created_at DESC",
+    $params
+);
 
-$stmt = $pdo->prepare($query);
-$stmt->execute($params);
-$orders = $stmt->fetchAll();
-
-$countStmt = $pdo->prepare($countQuery);
-$countStmt->execute($params);
-$total = $countStmt->fetchColumn();
-$totalPages = ceil($total / $perPage);
-
-// Handle status update
-if (isset($_POST['update_status'])) {
-    $orderId = intval($_POST['order_id']);
-    $newStatus = sanitizeInput($_POST['new_status']);
-    
-    $pdo->prepare("UPDATE orders SET order_status = ? WHERE id = ?")
-        ->execute([$newStatus, $orderId]);
-    
-    $_SESSION['flash_message'] = "Order status updated";
-    $_SESSION['flash_type'] = "success";
-    redirect(APP_URL . '/admin/orders.php');
-}
+include __DIR__ . '/partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="fw-bold text-brand-purple mb-0">Orders Management</h4>
+<div class="admin-page-header">
+  <h1>Orders <span class="badge badge-purple"><?= count($orders) ?></span></h1>
 </div>
 
-<!-- Filters -->
-<div class="card admin-card mb-4">
-    <div class="card-body">
-        <form method="GET" action="">
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <input type="text" name="search" class="form-control" value="<?php echo $searchQuery; ?>" placeholder="Search orders...">
-                </div>
-                <div class="col-md-3">
-                    <select name="status" class="form-select">
-                        <option value="">All Status</option>
-                        <option value="pending" <?php echo $statusFilter === 'pending' ? 'selected' : ''; ?>>Pending</option>
-                        <option value="processing" <?php echo $statusFilter === 'processing' ? 'selected' : ''; ?>>Processing</option>
-                        <option value="completed" <?php echo $statusFilter === 'completed' ? 'selected' : ''; ?>>Completed</option>
-                        <option value="cancelled" <?php echo $statusFilter === 'cancelled' ? 'selected' : ''; ?>>Cancelled</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <button type="submit" class="btn btn-brand-blue w-100">
-                        <i class="fas fa-filter me-2"></i>Filter
-                    </button>
-                </div>
-                <div class="col-md-2">
-                    <a href="orders.php" class="btn btn-outline-secondary w-100">
-                        <i class="fas fa-times me-2"></i>Clear
-                    </a>
-                </div>
-            </div>
-        </form>
-    </div>
+<div class="admin-filters">
+  <form method="GET" style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <input type="text" name="q" class="form-control" placeholder="Order# or user..." value="<?= e($search) ?>">
+    <select name="status" class="form-control">
+      <option value="">All Payment Status</option>
+      <?php foreach (['pending','paid','failed','refunded'] as $s): ?>
+      <option value="<?= $s ?>" <?= $status===$s?'selected':'' ?>><?= ucfirst($s) ?></option>
+      <?php endforeach; ?>
+    </select>
+    <select name="method" class="form-control">
+      <option value="">All Methods</option>
+      <?php foreach (['bkash','nagad','ssl','bank','visa','mastercard'] as $m): ?>
+      <option value="<?= $m ?>" <?= $method===$m?'selected':'' ?>><?= strtoupper($m) ?></option>
+      <?php endforeach; ?>
+    </select>
+    <button type="submit" class="btn btn-secondary">Filter</button>
+    <a href="<?= APP_URL ?>/admin/orders.php" class="btn btn-secondary">Reset</a>
+  </form>
 </div>
 
-<div class="card admin-card">
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table admin-table mb-0">
-                <thead>
-                    <tr>
-                        <th>Order #</th>
-                        <th>Customer</th>
-                        <th>Amount</th>
-                        <th>Payment</th>
-                        <th>Status</th>
-                        <th>Date</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($orders as $order): ?>
-                    <tr>
-                        <td>
-                            <a href="order-detail.php?id=<?php echo $order['id']; ?>" class="fw-bold text-brand-purple">
-                                <?php echo $order['order_number']; ?>
-                            </a>
-                        </td>
-                        <td>
-                            <span class="fw-bold"><?php echo $order['user_name']; ?></span>
-                        </td>
-                        <td class="fw-bold text-brand-blue"><?php echo formatPrice($order['total_amount']); ?></td>
-                        <td>
-                            <span class="text-capitalize"><?php echo $order['payment_method']; ?></span>
-                            <br>
-                            <small class="badge bg-<?php echo $order['payment_status'] === 'completed' ? 'success' : 'warning'; ?>">
-                                <?php echo ucfirst($order['payment_status']); ?>
-                            </small>
-                        </td>
-                        <td>
-                            <form method="POST" action="" class="d-inline">
-                                <input type="hidden" name="order_id" value="<?php echo $order['id']; ?>">
-                                <select name="new_status" class="form-select form-select-sm" onchange="this.form.submit()" style="width: 120px;">
-                                    <option value="pending" <?php echo $order['order_status'] === 'pending' ? 'selected' : ''; ?>>Pending</option>
-                                    <option value="processing" <?php echo $order['order_status'] === 'processing' ? 'selected' : ''; ?>>Processing</option>
-                                    <option value="completed" <?php echo $order['order_status'] === 'completed' ? 'selected' : ''; ?>>Completed</option>
-                                    <option value="cancelled" <?php echo $order['order_status'] === 'cancelled' ? 'selected' : ''; ?>>Cancelled</option>
-                                </select>
-                                <input type="hidden" name="update_status" value="1">
-                            </form>
-                        </td>
-                        <td><?php echo date('M d, Y H:i', strtotime($order['created_at'])); ?></td>
-                        <td>
-                            <a href="order-detail.php?id=<?php echo $order['id']; ?>" class="action-btn view" title="View">
-                                <i class="fas fa-eye"></i>
-                            </a>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-<!-- Pagination -->
-<?php if ($totalPages > 1): ?>
-<nav class="mt-4">
-    <ul class="pagination justify-content-center">
-        <?php if ($page > 1): ?>
-        <li class="page-item"><a class="page-link" href="?page=<?php echo $page - 1; ?>&status=<?php echo $statusFilter; ?>&search=<?php echo urlencode($searchQuery); ?>"><i class="fas fa-chevron-left"></i></a></li>
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Order #</th><th>Customer</th><th>Total</th><th>Method</th><th>Payment</th><th>Date</th><th>Actions</th></tr></thead>
+      <tbody>
+        <?php foreach ($orders as $o): ?>
+        <tr>
+          <td style="font-weight:700"><?= e($o['order_number']) ?></td>
+          <td><?= e($o['user_name']) ?></td>
+          <td style="font-weight:600"><?= formatPrice($o['total']) ?></td>
+          <td><span style="text-transform:uppercase;font-size:.8rem;font-weight:600"><?= e($o['payment_method']) ?></span></td>
+          <td><span class="badge <?= $o['payment_status']==='paid'?'badge-success':($o['payment_status']==='failed'?'badge-danger':'badge-warning') ?>"><?= $o['payment_status'] ?></span></td>
+          <td style="font-size:.85rem"><?= date('M j, Y', strtotime($o['created_at'])) ?></td>
+          <td><a href="?view=<?= $o['id'] ?>" class="btn btn-secondary btn-sm">View</a></td>
+        </tr>
+        <?php endforeach; ?>
+        <?php if (empty($orders)): ?>
+        <tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted)">No orders found.</td></tr>
         <?php endif; ?>
-        
-        <?php for ($i = max(1, $page - 2); $i <= min($totalPages, $page + 2); $i++): ?>
-        <li class="page-item <?php echo $i == $page ? 'active' : ''; ?>"><a class="page-link" href="?page=<?php echo $i; ?>&status=<?php echo $statusFilter; ?>&search=<?php echo urlencode($searchQuery); ?>"><?php echo $i; ?></a></li>
-        <?php endfor; ?>
-        
-        <?php if ($page < $totalPages): ?>
-        <li class="page-item"><a class="page-link" href="?page=<?php echo $page + 1; ?>&status=<?php echo $statusFilter; ?>&search=<?php echo urlencode($searchQuery); ?>"><i class="fas fa-chevron-right"></i></a></li>
-        <?php endif; ?>
-    </ul>
-</nav>
-<?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
 
-<?php include 'includes/footer.php'; ?>
+<?php include __DIR__ . '/partials/footer.php'; ?>

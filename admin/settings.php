@@ -1,197 +1,270 @@
 <?php
-$pageTitle = 'Settings';
-include 'includes/header.php';
-
-$success = false;
+require_once __DIR__ . '/../src/init.php';
+requireAdmin();
+$pageTitle = 'Settings — Admin';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    foreach ($_POST as $key => $value) {
-        if (strpos($key, 'setting_') === 0) {
-            $settingKey = substr($key, 8); // Remove 'setting_' prefix
-            
-            // Update or insert
-            $checkStmt = $pdo->prepare("SELECT id FROM settings WHERE setting_key = ?");
-            $checkStmt->execute([$settingKey]);
-            
-            if ($checkStmt->fetch()) {
-                $pdo->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = ?")
-                    ->execute([$value, $settingKey]);
-            } else {
-                $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)")
-                    ->execute([$settingKey, $value]);
-            }
+    verifyCsrf();
+    $fields = [
+        'site_name','site_tagline','currency','currency_symbol',
+        'tax_rate','vat_rate',
+        'bkash_number','nagad_number',
+        'ssl_merchant_id','ssl_merchant_pass','ssl_store_id',
+        'bank_account','bank_name','bank_routing',
+        'download_limit','download_expiry_days',
+        'smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from',
+        'footer_text','dark_mode_default','maintenance_mode',
+    ];
+    foreach ($fields as $key) {
+        $val = sanitize($_POST[$key] ?? '');
+        Database::execute(
+            "INSERT INTO settings (setting_key,setting_value) VALUES (?,?) ON DUPLICATE KEY UPDATE setting_value=?",
+            [$key, $val, $val]
+        );
+    }
+
+    // Logo upload
+    if (!empty($_FILES['logo']['name'])) {
+        $res = uploadFile($_FILES['logo'], ROOT_PATH . '/assets/images', ALLOWED_IMAGE_TYPES, MAX_IMAGE_SIZE);
+        if ($res['success']) {
+            $logoVal = 'assets/images/' . $res['filename'];
+            Database::execute(
+                "INSERT INTO settings (setting_key,setting_value) VALUES ('logo',?) ON DUPLICATE KEY UPDATE setting_value=?",
+                [$logoVal, $logoVal]
+            );
+        } else {
+            flash('danger', 'Logo upload failed: ' . $res['error']);
         }
     }
-    
-    $success = true;
-    $_SESSION['flash_message'] = "Settings saved successfully";
-    $_SESSION['flash_type'] = "success";
+
+    flash('success', 'Settings saved successfully!');
+    redirect(APP_URL . '/admin/settings.php');
 }
 
-// Get all settings
-$settings = $pdo->query("SELECT * FROM settings ORDER BY setting_key")->fetchAll(PDO::FETCH_KEY_PAIR);
-
-// Payment gateways
-$gateways = $pdo->query("SELECT * FROM payment_gateways ORDER BY sort_order")->fetchAll();
+$s = getAllSettings();
+include __DIR__ . '/partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="fw-bold text-brand-purple mb-0">Settings</h4>
+<div class="admin-page-header">
+  <h1>Site Settings</h1>
 </div>
 
-<?php if ($success): ?>
-<div class="alert alert-success">
-    <i class="fas fa-check-circle me-2"></i>Settings saved successfully!
-</div>
-<?php endif; ?>
+<form method="POST" enctype="multipart/form-data">
+  <?= csrfField() ?>
 
-<div class="row g-4">
-    <!-- General Settings -->
-    <div class="col-lg-6">
-        <div class="card admin-card h-100">
-            <div class="card-header">
-                <h5 class="mb-0 fw-bold"><i class="fas fa-cog me-2"></i>General Settings</h5>
-            </div>
-            <div class="card-body">
-                <form method="POST" action="" class="admin-form">
-                    <div class="mb-3">
-                        <label>Site Name</label>
-                        <input type="text" name="setting_site_name" class="form-control" value="<?php echo $settings['site_name'] ?? 'MBHaat.com'; ?>">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label>Site Description</label>
-                        <textarea name="setting_site_description" class="form-control" rows="2"><?php echo $settings['site_description'] ?? ''; ?></textarea>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label>Contact Email</label>
-                        <input type="email" name="setting_contact_email" class="form-control" value="<?php echo $settings['contact_email'] ?? ''; ?>">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label>Contact Phone</label>
-                        <input type="text" name="setting_contact_phone" class="form-control" value="<?php echo $settings['contact_phone'] ?? ''; ?>">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label>Currency</label>
-                        <input type="text" name="setting_currency" class="form-control" value="<?php echo $settings['currency'] ?? 'BDT'; ?>">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label>Currency Symbol</label>
-                        <input type="text" name="setting_currency_symbol" class="form-control" value="<?php echo $settings['currency_symbol'] ?? '৳'; ?>">
-                    </div>
-                    
-                    <button type="submit" class="btn btn-brand-purple">
-                        <i class="fas fa-save me-2"></i>Save Settings
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Tax Settings -->
-    <div class="col-lg-6">
-        <div class="card admin-card h-100">
-            <div class="card-header">
-                <h5 class="mb-0 fw-bold"><i class="fas fa-calculator me-2"></i>Tax Settings</h5>
-            </div>
-            <div class="card-body">
-                <form method="POST" action="" class="admin-form">
-                    <div class="mb-3">
-                        <div class="form-check mb-2">
-                            <input type="checkbox" name="setting_tax_enabled" id="tax_enabled" class="form-check-input" value="1" <?php echo ($settings['tax_enabled'] ?? '0') == '1' ? 'checked' : ''; ?>>
-                            <label class="form-check-label" for="tax_enabled">Enable Tax</label>
-                        </div>
-                        <input type="number" name="setting_tax_percentage" class="form-control" step="0.01" value="<?php echo $settings['tax_percentage'] ?? '0'; ?>">
-                        <small class="text-muted">Tax percentage (%)</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <div class="form-check mb-2">
-                            <input type="checkbox" name="setting_gst_enabled" id="gst_enabled" class="form-check-input" value="1" <?php echo ($settings['gst_enabled'] ?? '0') == '1' ? 'checked' : ''; ?>>
-                            <label class="form-check-label" for="gst_enabled">Enable GST</label>
-                        </div>
-                        <input type="number" name="setting_gst_percentage" class="form-control" step="0.01" value="<?php echo $settings['gst_percentage'] ?? '0'; ?>">
-                        <small class="text-muted">GST percentage (%)</small>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-brand-purple">
-                        <i class="fas fa-save me-2"></i>Save Tax Settings
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Download Settings -->
-    <div class="col-lg-6">
-        <div class="card admin-card h-100">
-            <div class="card-header">
-                <h5 class="mb-0 fw-bold"><i class="fas fa-download me-2"></i>Download Settings</h5>
-            </div>
-            <div class="card-body">
-                <form method="POST" action="" class="admin-form">
-                    <div class="mb-3">
-                        <label>Default Download Limit</label>
-                        <input type="number" name="setting_download_limit" class="form-control" value="<?php echo $settings['download_limit'] ?? '5'; ?>">
-                        <small class="text-muted">Number of times a customer can download (-1 for unlimited)</small>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label>Download Expiry (Days)</label>
-                        <input type="number" name="setting_download_expiry" class="form-control" value="<?php echo $settings['download_expiry'] ?? '30'; ?>">
-                        <small class="text-muted">Days before download link expires (0 for never)</small>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-brand-purple">
-                        <i class="fas fa-save me-2"></i>Save Download Settings
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Payment Gateways -->
-    <div class="col-lg-6">
-        <div class="card admin-card h-100">
-            <div class="card-header">
-                <h5 class="mb-0 fw-bold"><i class="fas fa-credit-card me-2"></i>Payment Gateways</h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>Gateway</th>
-                                <th>Status</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($gateways as $gateway): ?>
-                            <tr>
-                                <td><?php echo $gateway['name']; ?></td>
-                                <td>
-                                    <span class="badge bg-<?php echo $gateway['is_active'] ? 'success' : 'secondary'; ?>">
-                                        <?php echo $gateway['is_active'] ? 'Active' : 'Inactive'; ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <a href="payment-gateway.php?id=<?php echo $gateway['id']; ?>" class="btn btn-sm btn-brand-blue">
-                                        <i class="fas fa-cog"></i> Configure
-                                    </a>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+  <!-- Tabs -->
+  <div style="display:flex;gap:.25rem;margin-bottom:1.5rem;flex-wrap:wrap" id="settings-tabs">
+    <?php
+    $tabs = ['general'=>'🌐 General','payment'=>'💳 Payment','download'=>'⬇️ Downloads','email'=>'📧 Email','branding'=>'🎨 Branding'];
+    $i = 0;
+    foreach ($tabs as $tab => $label):
+    ?>
+    <button type="button" class="btn <?= $i===0?'btn-primary':'btn-secondary' ?> btn-sm" onclick="showTab('<?= $tab ?>')" id="tab-btn-<?= $tab ?>"><?= $label ?></button>
+    <?php $i++; endforeach; ?>
+  </div>
 
-<?php include 'includes/footer.php'; ?>
+  <!-- General -->
+  <div id="tab-general" class="settings-tab">
+    <div class="card card-body mb-3">
+      <h3 style="margin-bottom:1.25rem">General Settings</h3>
+      <div class="grid grid-2 gap-3">
+        <div class="form-group">
+          <label class="form-label">Site Name</label>
+          <input type="text" name="site_name" class="form-control" value="<?= e($s['site_name'] ?? 'MBHaat.com') ?>">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tagline</label>
+          <input type="text" name="site_tagline" class="form-control" value="<?= e($s['site_tagline'] ?? '') ?>">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Currency Code</label>
+          <input type="text" name="currency" class="form-control" value="<?= e($s['currency'] ?? 'BDT') ?>" placeholder="BDT">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Currency Symbol</label>
+          <input type="text" name="currency_symbol" class="form-control" value="<?= e($s['currency_symbol'] ?? '৳') ?>" placeholder="৳">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tax Rate (%)</label>
+          <input type="number" name="tax_rate" step="0.01" min="0" max="100" class="form-control" value="<?= e($s['tax_rate'] ?? '0') ?>">
+        </div>
+        <div class="form-group">
+          <label class="form-label">VAT Rate (%)</label>
+          <input type="number" name="vat_rate" step="0.01" min="0" max="100" class="form-control" value="<?= e($s['vat_rate'] ?? '0') ?>">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dark Mode Default</label>
+          <select name="dark_mode_default" class="form-control">
+            <option value="0" <?= ($s['dark_mode_default']??'0')==='0'?'selected':'' ?>>Light Mode</option>
+            <option value="1" <?= ($s['dark_mode_default']??'0')==='1'?'selected':'' ?>>Dark Mode</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Maintenance Mode</label>
+          <select name="maintenance_mode" class="form-control">
+            <option value="0" <?= ($s['maintenance_mode']??'0')==='0'?'selected':'' ?>>Off — Site is Live</option>
+            <option value="1" <?= ($s['maintenance_mode']??'0')==='1'?'selected':'' ?>>On — Under Maintenance</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment -->
+  <div id="tab-payment" class="settings-tab" style="display:none">
+    <div class="card card-body mb-3">
+      <h3 style="margin-bottom:1.25rem">Payment Gateway Settings</h3>
+
+      <!-- bKash -->
+      <div style="background:linear-gradient(90deg,#E2136E15,transparent);border-left:3px solid #E2136E;border-radius:var(--radius-sm);padding:1rem 1.25rem;margin-bottom:1.5rem">
+        <h4 style="margin-bottom:1rem;color:#E2136E">📱 bKash</h4>
+        <div class="form-group">
+          <label class="form-label">bKash Merchant Number</label>
+          <input type="text" name="bkash_number" class="form-control" value="<?= e($s['bkash_number'] ?? '') ?>" placeholder="01XXXXXXXXX">
+          <div class="form-text">Users will send payment to this number.</div>
+        </div>
+      </div>
+
+      <!-- Nagad -->
+      <div style="background:linear-gradient(90deg,#F6851B15,transparent);border-left:3px solid #F6851B;border-radius:var(--radius-sm);padding:1rem 1.25rem;margin-bottom:1.5rem">
+        <h4 style="margin-bottom:1rem;color:#F6851B">📲 Nagad</h4>
+        <div class="form-group">
+          <label class="form-label">Nagad Merchant Number</label>
+          <input type="text" name="nagad_number" class="form-control" value="<?= e($s['nagad_number'] ?? '') ?>" placeholder="01XXXXXXXXX">
+        </div>
+      </div>
+
+      <!-- SSL Commerz -->
+      <div style="background:linear-gradient(90deg,#008DC915,transparent);border-left:3px solid #008DC9;border-radius:var(--radius-sm);padding:1rem 1.25rem;margin-bottom:1.5rem">
+        <h4 style="margin-bottom:1rem;color:#008DC9">💳 SSLCommerz</h4>
+        <div class="grid grid-2 gap-3">
+          <div class="form-group">
+            <label class="form-label">Store ID</label>
+            <input type="text" name="ssl_store_id" class="form-control" value="<?= e($s['ssl_store_id'] ?? '') ?>">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Merchant ID</label>
+            <input type="text" name="ssl_merchant_id" class="form-control" value="<?= e($s['ssl_merchant_id'] ?? '') ?>">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Merchant Password</label>
+            <input type="password" name="ssl_merchant_pass" class="form-control" value="<?= e($s['ssl_merchant_pass'] ?? '') ?>">
+          </div>
+        </div>
+      </div>
+
+      <!-- Bank Transfer -->
+      <div style="background:linear-gradient(90deg,#2E7D3215,transparent);border-left:3px solid #2E7D32;border-radius:var(--radius-sm);padding:1rem 1.25rem;margin-bottom:1.5rem">
+        <h4 style="margin-bottom:1rem;color:#2E7D32">🏦 Bank Transfer</h4>
+        <div class="grid grid-2 gap-3">
+          <div class="form-group">
+            <label class="form-label">Bank Name</label>
+            <input type="text" name="bank_name" class="form-control" value="<?= e($s['bank_name'] ?? '') ?>" placeholder="e.g. Dutch Bangla Bank">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Account Number</label>
+            <input type="text" name="bank_account" class="form-control" value="<?= e($s['bank_account'] ?? '') ?>">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Routing Number</label>
+            <input type="text" name="bank_routing" class="form-control" value="<?= e($s['bank_routing'] ?? '') ?>">
+          </div>
+        </div>
+      </div>
+
+      <!-- Visa / Mastercard note -->
+      <div style="background:linear-gradient(90deg,#1A1F7115,transparent);border-left:3px solid #1A1F71;border-radius:var(--radius-sm);padding:1rem 1.25rem">
+        <h4 style="margin-bottom:.5rem;color:#1A1F71">💳 Visa &amp; Mastercard</h4>
+        <p class="text-small text-muted">Visa and Mastercard payments are processed via SSLCommerz. Configure your SSLCommerz credentials above to enable card payments.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Downloads -->
+  <div id="tab-download" class="settings-tab" style="display:none">
+    <div class="card card-body mb-3">
+      <h3 style="margin-bottom:1.25rem">Download Settings</h3>
+      <div class="grid grid-2 gap-3">
+        <div class="form-group">
+          <label class="form-label">Download Limit (per order item)</label>
+          <input type="number" name="download_limit" min="1" class="form-control" value="<?= e($s['download_limit'] ?? '5') ?>">
+          <div class="form-text">How many times a buyer can download each file.</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Download Expiry (days)</label>
+          <input type="number" name="download_expiry_days" min="1" class="form-control" value="<?= e($s['download_expiry_days'] ?? '30') ?>">
+          <div class="form-text">Days from purchase until download link expires.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Email -->
+  <div id="tab-email" class="settings-tab" style="display:none">
+    <div class="card card-body mb-3">
+      <h3 style="margin-bottom:1.25rem">Email / SMTP Settings</h3>
+      <div class="grid grid-2 gap-3">
+        <div class="form-group">
+          <label class="form-label">SMTP Host</label>
+          <input type="text" name="smtp_host" class="form-control" value="<?= e($s['smtp_host'] ?? '') ?>" placeholder="smtp.gmail.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">SMTP Port</label>
+          <input type="number" name="smtp_port" class="form-control" value="<?= e($s['smtp_port'] ?? '587') ?>">
+        </div>
+        <div class="form-group">
+          <label class="form-label">SMTP Username</label>
+          <input type="text" name="smtp_user" class="form-control" value="<?= e($s['smtp_user'] ?? '') ?>">
+        </div>
+        <div class="form-group">
+          <label class="form-label">SMTP Password</label>
+          <input type="password" name="smtp_pass" class="form-control" value="<?= e($s['smtp_pass'] ?? '') ?>">
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label class="form-label">From Email Address</label>
+          <input type="email" name="smtp_from" class="form-control" value="<?= e($s['smtp_from'] ?? '') ?>" placeholder="noreply@mbhaat.com">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Branding -->
+  <div id="tab-branding" class="settings-tab" style="display:none">
+    <div class="card card-body mb-3">
+      <h3 style="margin-bottom:1.25rem">Branding &amp; Appearance</h3>
+
+      <!-- Current Logo -->
+      <div class="form-group">
+        <label class="form-label">Site Logo</label>
+        <?php if (!empty($s['logo'])): ?>
+        <div style="margin-bottom:.75rem">
+          <img src="<?= APP_URL ?>/<?= e($s['logo']) ?>" style="height:60px;border-radius:var(--radius-sm);border:1px solid var(--border);padding:.5rem;background:var(--surface2)">
+        </div>
+        <?php endif; ?>
+        <input type="file" name="logo" class="form-control" accept="image/*">
+        <div class="form-text">Upload a new logo to replace the current one. PNG recommended.</div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Footer Text</label>
+        <input type="text" name="footer_text" class="form-control" value="<?= e($s['footer_text'] ?? '') ?>">
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:1rem">
+    <button type="submit" class="btn btn-primary btn-lg">💾 Save All Settings</button>
+  </div>
+</form>
+
+<script>
+function showTab(tab) {
+  document.querySelectorAll('.settings-tab').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('[id^="tab-btn-"]').forEach(btn => { btn.classList.remove('btn-primary'); btn.classList.add('btn-secondary'); });
+  document.getElementById('tab-' + tab).style.display = 'block';
+  document.getElementById('tab-btn-' + tab).classList.remove('btn-secondary');
+  document.getElementById('tab-btn-' + tab).classList.add('btn-primary');
+}
+</script>
+
+<?php include __DIR__ . '/partials/footer.php'; ?>

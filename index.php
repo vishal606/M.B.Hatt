@@ -1,233 +1,177 @@
 <?php
-$pageTitle = 'Home';
-require_once 'includes/config.php';
-include 'includes/header.php';
+require_once __DIR__ . '/src/init.php';
 
-// Get featured products
-$featuredStmt = $pdo->query("SELECT p.*, c.name as category_name FROM products p 
-    LEFT JOIN categories c ON p.category_id = c.id 
-    WHERE p.status = 'active' AND p.featured = 1 
-    ORDER BY p.created_at DESC LIMIT 8");
-$featuredProducts = $featuredStmt->fetchAll();
+$pageTitle = getSetting('site_name', 'MBHaat.com') . ' — ' . getSetting('site_tagline', 'Premium Digital Products');
+$pageDesc  = getSetting('site_tagline', 'Browse and download premium digital products.');
 
-// Get categories
-$categoryStmt = $pdo->query("SELECT * FROM categories WHERE status = 'active' ORDER BY sort_order LIMIT 6");
-$categories = $categoryStmt->fetchAll();
+// Featured products
+$featuredProducts = Database::fetchAll(
+    "SELECT p.*, c.name as category_name, 
+     (SELECT image_path FROM product_screenshots WHERE product_id = p.id ORDER BY sort_order LIMIT 1) as thumbnail
+     FROM products p LEFT JOIN categories c ON c.id = p.category_id
+     WHERE p.status = 'active' ORDER BY p.created_at DESC LIMIT 8"
+);
 
-// Get testimonials
-$testimonialStmt = $pdo->query("SELECT * FROM testimonials WHERE status = 'active' ORDER BY created_at DESC LIMIT 3");
-$testimonials = $testimonialStmt->fetchAll();
+// Categories (Top-level only)
+$categories = Database::fetchAll(
+    "SELECT c.*, COUNT(p.id) as product_count FROM categories c
+     LEFT JOIN products p ON p.category_id = c.id AND p.status='active'
+     WHERE c.parent_id IS NULL
+     GROUP BY c.id ORDER BY c.id ASC LIMIT 8"
+);
+
+// Testimonials
+$testimonials = Database::fetchAll(
+    "SELECT * FROM testimonials WHERE is_active = 1 ORDER BY sort_order"
+);
+
+include __DIR__ . '/src/views/layouts/header.php';
 ?>
 
-<!-- Hero Section -->
-<section class="hero-section">
-    <div class="container">
-        <div class="row align-items-center">
-            <div class="col-lg-6 hero-content fade-in">
-                <h1 class="hero-title mb-3">Premium Digital Products for Everyone</h1>
-                <p class="hero-subtitle">Discover a world of high-quality digital products. Templates, software, graphics, and more at unbeatable prices.</p>
-                <div class="d-flex flex-wrap gap-3">
-                    <a href="pages/products.php" class="btn btn-lg btn-brand-blue px-4 py-3 rounded-pill">
-                        <i class="fas fa-compass me-2"></i>Explore Products
-                    </a>
-                    <a href="pages/register.php" class="btn btn-lg btn-outline-light px-4 py-3 rounded-pill">
-                        <i class="fas fa-user-plus me-2"></i>Join Free
-                    </a>
-                </div>
-                <div class="mt-4 d-flex gap-4">
-                    <div class="text-white">
-                        <h3 class="mb-0 fw-bold">1000+</h3>
-                        <small>Products</small>
-                    </div>
-                    <div class="text-white">
-                        <h3 class="mb-0 fw-bold">5000+</h3>
-                        <small>Happy Customers</small>
-                    </div>
-                    <div class="text-white">
-                        <h3 class="mb-0 fw-bold">99%</h3>
-                        <small>Satisfaction</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-6 text-center d-none d-lg-block">
-                <img src="https://img.icons8.com/clouds/500/online-shop.png" alt="Shopping" class="img-fluid" style="max-height: 400px;">
-            </div>
-        </div>
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-slider">
+    <div class="hero-slide active" style="background-image: url('<?= ASSETS_URL ?>/images/Background_1.jpg')"></div>
+    <div class="hero-slide" style="background-image: url('<?= ASSETS_URL ?>/images/Background_2.jpg')"></div>
+    <div class="hero-slide" style="background-image: url('<?= ASSETS_URL ?>/images/Background_3.jpg')"></div>
+  </div>
+  <div class="container">
+    <div class="hero-content">
+      <div class="hero-badge">
+        ✨ Premium Digital Marketplace
+      </div>
+      <h1 class="hero-title">Upgrade Your <br>Tech Lifestyle</h1>
+      <p class="hero-subtitle">Shop the latest gadgets, accessories, and smart devices at the best prices.</p>
+      <div class="hero-actions">
+        <a href="<?= APP_URL ?>/products.php" class="btn btn-accent btn-lg">Explore Products →</a>
+        <?php if (!isLoggedIn()): ?>
+        <a href="<?= APP_URL ?>/register.php" class="btn btn-secondary btn-lg hero-btn-outline">Create Account</a>
+        <?php endif; ?>
+      </div>
     </div>
+  </div>
 </section>
 
-<!-- Categories Section -->
-<section class="py-5" style="background-color: #F7F6E5;">
-    <div class="container">
-        <div class="text-center mb-5">
-            <h2 class="fw-bold text-brand-purple">Browse Categories</h2>
-            <p class="text-muted">Find exactly what you need</p>
-        </div>
-        <div class="row g-4">
-            <?php foreach ($categories as $category): ?>
-            <div class="col-6 col-md-4 col-lg-2">
-                <a href="pages/products.php?category=<?php echo $category['id']; ?>" class="text-decoration-none">
-                    <div class="category-card h-100">
-                        <div class="category-icon">
-                            <i class="fas fa-folder-open"></i>
-                        </div>
-                        <h6 class="fw-bold text-brand-purple mb-0"><?php echo $category['name']; ?></h6>
-                        <small class="text-muted">
-                            <?php
-                            $countStmt = $pdo->prepare("SELECT COUNT(*) FROM products WHERE category_id = ? AND status = 'active'");
-                            $countStmt->execute([$category['id']]);
-                            echo $countStmt->fetchColumn() . ' items';
-                            ?>
-                        </small>
-                    </div>
-                </a>
-            </div>
-            <?php endforeach; ?>
-        </div>
+<!-- Search Bar -->
+<div class="container hero-search-wrapper">
+  <form action="<?= APP_URL ?>/products.php" method="GET">
+    <div class="search-bar hero-search-bar">
+      <input type="text" name="q" placeholder="Search products..." value="<?= e($_GET['q'] ?? '') ?>">
+      <button type="submit" class="btn btn-primary btn-sm">🔍 Search</button>
     </div>
+  </form>
+</div>
+
+<!-- Categories -->
+<section class="section">
+  <div class="container">
+    <div class="section-header">
+      <h2 class="section-title">Browse by Category</h2>
+      <p class="section-subtitle">Find exactly what you're looking for</p>
+    </div>
+    <div class="grid grid-4 gap-2">
+      <?php foreach ($categories as $cat): ?>
+      <a href="<?= APP_URL ?>/products.php?category=<?= e($cat['slug']) ?>" class="card" style="text-decoration:none;transition:all var(--transition)">
+        <div class="card-body" style="display:flex;align-items:center;gap:1rem">
+          <div style="width:48px;height:48px;background:linear-gradient(135deg,var(--purple),var(--blue-dark));border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0">
+            <?= e($cat['icon'] ?: '📁') ?>
+          </div>
+          <div>
+            <div style="font-weight:700;font-family:var(--font-display)"><?= e($cat['name']) ?></div>
+            <div style="font-size:.8rem;color:var(--text-muted)"><?= $cat['product_count'] ?> products</div>
+          </div>
+        </div>
+      </a>
+      <?php endforeach; ?>
+    </div>
+  </div>
 </section>
 
-<!-- Featured Products Section -->
-<section class="py-5">
-    <div class="container">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2 class="fw-bold text-brand-purple mb-0">Featured Products</h2>
-                <p class="text-muted mb-0">Handpicked just for you</p>
-            </div>
-            <a href="pages/products.php" class="btn btn-brand-blue">
-                View All <i class="fas fa-arrow-right ms-1"></i>
-            </a>
-        </div>
-        
-        <div class="row g-4">
-            <?php foreach ($featuredProducts as $product): ?>
-            <div class="col-12 col-md-6 col-lg-3">
-                <div class="product-card h-100 position-relative">
-                    <?php if ($product['sale_price'] && $product['sale_price'] < $product['price']): ?>
-                        <span class="product-badge badge-sale">SALE</span>
-                    <?php endif; ?>
-                    <?php if ($product['featured']): ?>
-                        <span class="product-badge badge-featured">FEATURED</span>
-                    <?php endif; ?>
-                    
-                    <a href="pages/product.php?slug=<?php echo $product['slug']; ?>">
-                        <img src="<?php echo $product['thumbnail'] ? APP_URL . '/' . $product['thumbnail'] : 'https://via.placeholder.com/300x200?text=No+Image'; ?>" 
-                             class="card-img-top" alt="<?php echo $product['name']; ?>">
-                    </a>
-                    
-                    <div class="card-body">
-                        <div class="mb-2">
-                            <small class="text-muted"><?php echo $product['category_name'] ?? 'Uncategorized'; ?></small>
-                        </div>
-                        <h5 class="product-title">
-                            <a href="pages/product.php?slug=<?php echo $product['slug']; ?>" class="text-decoration-none text-brand-purple">
-                                <?php echo $product['name']; ?>
-                            </a>
-                        </h5>
-                        <div class="d-flex align-items-center justify-content-between">
-                            <div>
-                                <?php if ($product['sale_price'] && $product['sale_price'] < $product['price']): ?>
-                                    <span class="product-price"><?php echo formatPrice($product['sale_price']); ?></span>
-                                    <span class="product-original-price"><?php echo formatPrice($product['price']); ?></span>
-                                <?php else: ?>
-                                    <span class="product-price"><?php echo formatPrice($product['price']); ?></span>
-                                <?php endif; ?>
-                            </div>
-                            <button onclick="addToCart(<?php echo $product['id']; ?>)" class="btn btn-brand-blue btn-sm rounded-circle" style="width: 40px; height: 40px;">
-                                <i class="fas fa-cart-plus"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
+<!-- Featured Products -->
+<section class="section" style="background:var(--surface2);padding:3.5rem 0">
+  <div class="container">
+    <div class="flex-between section-header" style="align-items:flex-end">
+      <div>
+        <h2 class="section-title">Featured Products</h2>
+        <p class="section-subtitle">Handpicked premium digital downloads</p>
+      </div>
+      <a href="<?= APP_URL ?>/products.php" class="btn btn-secondary btn-sm">View All →</a>
     </div>
+    <div class="grid grid-4 gap-2 fade-in">
+      <?php foreach ($featuredProducts as $product): ?>
+      <div class="product-card">
+        <div class="product-card-image">
+          <?php if ($product['thumbnail']): ?>
+            <img src="<?= UPLOADS_URL ?>/screenshots/<?= e($product['thumbnail']) ?>" alt="<?= e($product['title']) ?>">
+          <?php else: ?>
+            <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:3rem;background:linear-gradient(135deg,var(--purple),var(--blue-dark))">📦</div>
+          <?php endif; ?>
+          <span class="product-card-badge"><?= e($product['category_name'] ?? 'Digital') ?></span>
+        </div>
+        <div class="product-card-body">
+          <div class="product-card-title"><?= e($product['title']) ?></div>
+          <div class="product-card-price"><?= formatPrice($product['price']) ?></div>
+        </div>
+        <div class="product-card-footer">
+          <a href="<?= APP_URL ?>/product.php?slug=<?= e($product['slug']) ?>" class="btn btn-secondary btn-sm" style="flex:1">View</a>
+          <button class="btn btn-primary btn-sm" style="flex:1" onclick="addToCart(<?= $product['id'] ?>, this)">🛒 Add</button>
+        </div>
+      </div>
+      <?php endforeach; ?>
+    </div>
+  </div>
 </section>
 
-<!-- Features Section -->
-<section class="py-5" style="background-color: #F7F6E5;">
-    <div class="container">
-        <div class="text-center mb-5">
-            <h2 class="fw-bold text-brand-purple">Why Choose MBHaat.com?</h2>
-            <p class="text-muted">We provide the best digital product experience</p>
-        </div>
-        <div class="row g-4">
-            <div class="col-md-4">
-                <div class="text-center p-4">
-                    <div class="mb-3">
-                        <i class="fas fa-shield-alt fa-3x text-brand-purple"></i>
-                    </div>
-                    <h4 class="fw-bold text-brand-purple">Secure Payments</h4>
-                    <p class="text-muted">Your transactions are protected with industry-standard encryption and security protocols.</p>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="text-center p-4">
-                    <div class="mb-3">
-                        <i class="fas fa-bolt fa-3x text-brand-purple"></i>
-                    </div>
-                    <h4 class="fw-bold text-brand-purple">Instant Delivery</h4>
-                    <p class="text-muted">Get instant access to your purchases right after payment confirmation.</p>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="text-center p-4">
-                    <div class="mb-3">
-                        <i class="fas fa-headset fa-3x text-brand-purple"></i>
-                    </div>
-                    <h4 class="fw-bold text-brand-purple">24/7 Support</h4>
-                    <p class="text-muted">Our dedicated support team is always ready to help you with any issues.</p>
-                </div>
-            </div>
-        </div>
+<!-- Why Us -->
+<section class="section">
+  <div class="container">
+    <div class="text-center section-header">
+      <h2 class="section-title">Why Choose MBHaat?</h2>
     </div>
+    <div class="grid grid-4 gap-2">
+      <?php
+      $features = [
+        ['icon'=>'⚡','title'=>'Instant Delivery','desc'=>'Download immediately after payment. No waiting.'],
+        ['icon'=>'🔒','title'=>'Secure Payment','desc'=>'Bkash, Nagad, SSL, Visa, Mastercard & Bank.'],
+        ['icon'=>'📁','title'=>'Quality Products','desc'=>'Curated premium digital products only.'],
+        ['icon'=>'🎧','title'=>'24/7 Support','desc'=>'Our team is always here to help you.'],
+      ];
+      foreach ($features as $f):
+      ?>
+      <div class="card card-body text-center" style="padding:2rem 1.5rem">
+        <div style="font-size:2.5rem;margin-bottom:1rem"><?= $f['icon'] ?></div>
+        <h4 style="margin-bottom:.5rem"><?= $f['title'] ?></h4>
+        <p class="text-muted text-small"><?= $f['desc'] ?></p>
+      </div>
+      <?php endforeach; ?>
+    </div>
+  </div>
 </section>
 
-<!-- Testimonials Section -->
-<section class="py-5">
-    <div class="container">
-        <div class="text-center mb-5">
-            <h2 class="fw-bold text-brand-purple">What Our Customers Say</h2>
-            <p class="text-muted">Real feedback from real customers</p>
-        </div>
-        <div class="row g-4">
-            <?php foreach ($testimonials as $testimonial): ?>
-            <div class="col-md-4">
-                <div class="testimonial-card h-100">
-                    <p class="mb-4" style="padding-top: 1rem;">"<?php echo $testimonial['content']; ?>"</p>
-                    <div class="testimonial-author">
-                        <img src="<?php echo $testimonial['avatar'] ? APP_URL . '/' . $testimonial['avatar'] : 'https://via.placeholder.com/50?text=' . substr($testimonial['name'], 0, 1); ?>" 
-                             alt="<?php echo $testimonial['name']; ?>" class="testimonial-avatar">
-                        <div>
-                            <h6 class="mb-0 fw-bold text-brand-purple"><?php echo $testimonial['name']; ?></h6>
-                            <small class="text-muted"><?php echo $testimonial['designation']; ?></small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
+<!-- Testimonials -->
+<?php if (!empty($testimonials)): ?>
+<section class="section" style="background:var(--purple-dark);padding:4rem 0">
+  <div class="container">
+    <div class="text-center section-header">
+      <h2 class="section-title" style="color:var(--blue-light)">What Customers Say</h2>
     </div>
-</section>
-
-<!-- Newsletter Section -->
-<section class="py-5" style="background: linear-gradient(135deg, #36064D 0%, #76D2DB 100%);">
-    <div class="container text-center text-white">
-        <h2 class="fw-bold mb-3">Subscribe to Our Newsletter</h2>
-        <p class="mb-4">Get the latest updates on new products and exclusive offers</p>
-        <div class="row justify-content-center">
-            <div class="col-md-6 col-lg-4">
-                <form class="d-flex gap-2">
-                    <input type="email" class="form-control rounded-pill" placeholder="Enter your email" required>
-                    <button type="submit" class="btn btn-light rounded-pill px-4" style="color: #36064D;">
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
-                </form>
-            </div>
+    <div class="grid grid-3 gap-2">
+      <?php foreach ($testimonials as $t): ?>
+      <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius);padding:1.5rem">
+        <div style="color:var(--gold);font-size:1rem;margin-bottom:.75rem"><?= str_repeat('★', $t['rating']) ?><?= str_repeat('☆', 5 - $t['rating']) ?></div>
+        <p style="color:rgba(255,255,255,.85);font-size:.9rem;line-height:1.7;margin-bottom:1rem">"<?= e($t['message']) ?>"</p>
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--purple));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.9rem"><?= strtoupper(substr($t['name'], 0, 1)) ?></div>
+          <div>
+            <div style="color:#fff;font-weight:600;font-size:.9rem"><?= e($t['name']) ?></div>
+            <?php if ($t['role']): ?><div style="color:var(--blue-light);font-size:.75rem"><?= e($t['role']) ?></div><?php endif; ?>
+          </div>
         </div>
+      </div>
+      <?php endforeach; ?>
     </div>
+  </div>
 </section>
+<?php endif; ?>
 
-<?php include 'includes/footer.php'; ?>
+<?php include __DIR__ . '/src/views/layouts/footer.php'; ?>

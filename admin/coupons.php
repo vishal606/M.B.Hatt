@@ -1,223 +1,140 @@
 <?php
-$pageTitle = 'Coupons';
-include 'includes/header.php';
-
+require_once __DIR__ . '/../src/init.php';
+requireAdmin();
+$pageTitle = 'Coupons — Admin';
+$action = sanitize($_GET['action'] ?? '');
+$editId = (int)($_GET['edit'] ?? 0);
 $errors = [];
 
-// Get all coupons
-$coupons = $pdo->query("SELECT * FROM coupons ORDER BY created_at DESC")->fetchAll();
-
-// Handle add/edit
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $couponId = intval($_POST['coupon_id'] ?? 0);
-    $code = strtoupper(sanitizeInput($_POST['code'] ?? ''));
-    $type = sanitizeInput($_POST['type'] ?? 'percentage');
-    $value = floatval($_POST['value'] ?? 0);
-    $minOrder = floatval($_POST['min_order_amount'] ?? 0);
-    $maxDiscount = !empty($_POST['max_discount']) ? floatval($_POST['max_discount']) : null;
-    $usageLimit = !empty($_POST['usage_limit']) ? intval($_POST['usage_limit']) : null;
-    $startDate = !empty($_POST['start_date']) ? $_POST['start_date'] : null;
-    $endDate = !empty($_POST['end_date']) ? $_POST['end_date'] : null;
-    $status = sanitizeInput($_POST['status'] ?? 'active');
-    
-    if (empty($code)) {
-        $errors[] = "Coupon code is required";
-    }
-    
-    if ($value <= 0) {
-        $errors[] = "Value must be greater than 0";
-    }
-    
-    if (empty($errors)) {
-        try {
-            if ($couponId > 0) {
-                // Update
-                $pdo->prepare("UPDATE coupons SET 
-                    code = ?, type = ?, value = ?, min_order_amount = ?, max_discount = ?,
-                    usage_limit = ?, start_date = ?, end_date = ?, status = ? WHERE id = ?")
-                    ->execute([$code, $type, $value, $minOrder, $maxDiscount, $usageLimit, $startDate, $endDate, $status, $couponId]);
-                $_SESSION['flash_message'] = "Coupon updated successfully";
-            } else {
-                // Insert
-                $pdo->prepare("INSERT INTO coupons 
-                    (code, type, value, min_order_amount, max_discount, usage_limit, start_date, end_date, status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-                    ->execute([$code, $type, $value, $minOrder, $maxDiscount, $usageLimit, $startDate, $endDate, $status]);
-                $_SESSION['flash_message'] = "Coupon created successfully";
-            }
-            
-            $_SESSION['flash_type'] = "success";
-            redirect(APP_URL . '/admin/coupons.php');
-        } catch (PDOException $e) {
-            $errors[] = "Coupon code already exists";
-        }
-    }
-}
-
-// Handle delete
+// Delete
 if (isset($_GET['delete'])) {
-    $pdo->prepare("DELETE FROM coupons WHERE id = ?")->execute([intval($_GET['delete'])]);
-    $_SESSION['flash_message'] = "Coupon deleted successfully";
-    $_SESSION['flash_type'] = "success";
-    redirect(APP_URL . '/admin/coupons.php');
+    verifyCsrf();
+    Database::execute("DELETE FROM coupons WHERE id=?", [(int)$_GET['delete']]);
+    flash('success','Coupon deleted.'); redirect(APP_URL.'/admin/coupons.php');
 }
 
-// Get coupon for edit
-$editCoupon = null;
-if (isset($_GET['edit'])) {
-    $editStmt = $pdo->prepare("SELECT * FROM coupons WHERE id = ?");
-    $editStmt->execute([intval($_GET['edit'])]);
-    $editCoupon = $editStmt->fetch();
+// Toggle
+if (isset($_GET['toggle'])) {
+    Database::execute("UPDATE coupons SET is_active=IF(is_active=1,0,1) WHERE id=?", [(int)$_GET['toggle']]);
+    redirect(APP_URL.'/admin/coupons.php');
 }
+
+// Save
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrf();
+    $code  = strtoupper(sanitize($_POST['code'] ?? ''));
+    $type  = in_array($_POST['type']??'',['flat','percentage']) ? $_POST['type'] : 'percentage';
+    $value = (float)($_POST['value'] ?? 0);
+    $min   = (float)($_POST['min_order'] ?? 0);
+    $limit = ($_POST['usage_limit'] ?? '') !== '' ? (int)$_POST['usage_limit'] : null;
+    $expiry= sanitize($_POST['expiry_date'] ?? '') ?: null;
+    $id    = (int)($_POST['id'] ?? 0);
+
+    if (!$code) $errors[] = 'Code is required.';
+    if ($value <= 0) $errors[] = 'Value must be greater than 0.';
+    if ($type === 'percentage' && $value > 100) $errors[] = 'Percentage cannot exceed 100%.';
+
+    if (!$errors) {
+        if ($id) {
+            Database::execute(
+                "UPDATE coupons SET code=?,type=?,value=?,min_order=?,usage_limit=?,expiry_date=? WHERE id=?",
+                [$code,$type,$value,$min,$limit,$expiry,$id]
+            );
+            flash('success','Coupon updated.');
+        } else {
+            Database::insert(
+                "INSERT INTO coupons (code,type,value,min_order,usage_limit,expiry_date) VALUES (?,?,?,?,?,?)",
+                [$code,$type,$value,$min,$limit,$expiry]
+            );
+            flash('success','Coupon created.');
+        }
+        redirect(APP_URL.'/admin/coupons.php');
+    }
+}
+
+$editCoupon = $editId ? Database::fetch("SELECT * FROM coupons WHERE id=?", [$editId]) : null;
+$coupons    = Database::fetchAll("SELECT * FROM coupons ORDER BY created_at DESC");
+
+include __DIR__ . '/partials/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="fw-bold text-brand-purple mb-0">Coupons</h4>
+<?php if ($action === 'add' || $editCoupon): ?>
+<div class="admin-page-header">
+  <h1><?= $editCoupon ? 'Edit Coupon' : 'Add Coupon' ?></h1>
+  <a href="<?= APP_URL ?>/admin/coupons.php" class="btn btn-secondary">← Back</a>
+</div>
+<?php if ($errors): ?><div class="alert alert-danger"><?php foreach($errors as $e): ?><div><?= e($e) ?></div><?php endforeach; ?></div><?php endif; ?>
+<div class="card form-card card-body">
+  <form method="POST">
+    <?= csrfField() ?>
+    <input type="hidden" name="id" value="<?= $editCoupon['id'] ?? 0 ?>">
+    <div class="grid grid-2 gap-3">
+      <div class="form-group">
+        <label class="form-label">Coupon Code *</label>
+        <input type="text" name="code" class="form-control" required style="text-transform:uppercase" value="<?= e($editCoupon['code'] ?? '') ?>" placeholder="e.g. SAVE20">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Discount Type</label>
+        <select name="type" class="form-control">
+          <option value="percentage" <?= ($editCoupon['type']??'percentage')==='percentage'?'selected':'' ?>>Percentage (%)</option>
+          <option value="flat" <?= ($editCoupon['type']??'')==='flat'?'selected':'' ?>>Flat Amount (<?= getSetting('currency_symbol','৳') ?>)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Discount Value *</label>
+        <input type="number" name="value" step="0.01" min="0.01" class="form-control" required value="<?= e($editCoupon['value'] ?? '') ?>">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Minimum Order Amount</label>
+        <input type="number" name="min_order" step="0.01" min="0" class="form-control" value="<?= e($editCoupon['min_order'] ?? '0') ?>">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Usage Limit</label>
+        <input type="number" name="usage_limit" min="1" class="form-control" placeholder="Leave blank for unlimited" value="<?= e($editCoupon['usage_limit'] ?? '') ?>">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Expiry Date</label>
+        <input type="date" name="expiry_date" class="form-control" value="<?= e($editCoupon['expiry_date'] ?? '') ?>">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary"><?= $editCoupon ? 'Update Coupon' : 'Create Coupon' ?></button>
+    <a href="<?= APP_URL ?>/admin/coupons.php" class="btn btn-secondary">Cancel</a>
+  </form>
 </div>
 
-<div class="row g-4">
-    <!-- Coupon Form -->
-    <div class="col-lg-4">
-        <div class="card admin-card">
-            <div class="card-header">
-                <h5 class="mb-0 fw-bold"><?php echo $editCoupon ? 'Edit Coupon' : 'Add Coupon'; ?></h5>
-            </div>
-            <div class="card-body">
-                <?php if (!empty($errors)): ?>
-                <div class="alert alert-danger">
-                    <?php foreach ($errors as $error): ?>
-                    <div><?php echo $error; ?></div>
-                    <?php endforeach; ?>
-                </div>
-                <?php endif; ?>
-                
-                <form method="POST" action="" class="admin-form">
-                    <input type="hidden" name="coupon_id" value="<?php echo $editCoupon['id'] ?? ''; ?>">
-                    
-                    <div class="mb-3">
-                        <label>Coupon Code *</label>
-                        <input type="text" name="code" class="form-control" value="<?php echo $editCoupon['code'] ?? ''; ?>" required>
-                    </div>
-                    
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label>Type</label>
-                            <select name="type" class="form-select">
-                                <option value="percentage" <?php echo ($editCoupon['type'] ?? '') === 'percentage' ? 'selected' : ''; ?>>Percentage (%)</option>
-                                <option value="flat" <?php echo ($editCoupon['type'] ?? '') === 'flat' ? 'selected' : ''; ?>>Flat Amount</option>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label>Value *</label>
-                            <input type="number" name="value" class="form-control" step="0.01" value="<?php echo $editCoupon['value'] ?? ''; ?>" required>
-                        </div>
-                    </div>
-                    
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label>Min Order Amount</label>
-                            <input type="number" name="min_order_amount" class="form-control" step="0.01" value="<?php echo $editCoupon['min_order_amount'] ?? '0'; ?>">
-                        </div>
-                        <div class="col-6">
-                            <label>Max Discount</label>
-                            <input type="number" name="max_discount" class="form-control" step="0.01" value="<?php echo $editCoupon['max_discount'] ?? ''; ?>">
-                            <small class="text-muted">Leave empty for no limit</small>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label>Usage Limit</label>
-                        <input type="number" name="usage_limit" class="form-control" value="<?php echo $editCoupon['usage_limit'] ?? ''; ?>">
-                        <small class="text-muted">Leave empty for unlimited</small>
-                    </div>
-                    
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label>Start Date</label>
-                            <input type="date" name="start_date" class="form-control" value="<?php echo $editCoupon['start_date'] ?? ''; ?>">
-                        </div>
-                        <div class="col-6">
-                            <label>End Date</label>
-                            <input type="date" name="end_date" class="form-control" value="<?php echo $editCoupon['end_date'] ?? ''; ?>">
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label>Status</label>
-                        <select name="status" class="form-select">
-                            <option value="active" <?php echo ($editCoupon['status'] ?? '') === 'active' ? 'selected' : ''; ?>>Active</option>
-                            <option value="inactive" <?php echo ($editCoupon['status'] ?? '') === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
-                        </select>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-brand-purple w-100">
-                        <i class="fas fa-save me-2"></i><?php echo $editCoupon ? 'Update' : 'Add'; ?> Coupon
-                    </button>
-                    
-                    <?php if ($editCoupon): ?>
-                    <a href="coupons.php" class="btn btn-outline-secondary w-100 mt-2">
-                        <i class="fas fa-times me-2"></i>Cancel
-                    </a>
-                    <?php endif; ?>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Coupons List -->
-    <div class="col-lg-8">
-        <div class="card admin-card">
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table admin-table mb-0">
-                        <thead>
-                            <tr>
-                                <th>Code</th>
-                                <th>Type</th>
-                                <th>Value</th>
-                                <th>Usage</th>
-                                <th>Valid Until</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($coupons as $coupon): ?>
-                            <tr>
-                                <td>
-                                    <span class="badge bg-brand-purple"><?php echo $coupon['code']; ?></span>
-                                </td>
-                                <td><?php echo ucfirst($coupon['type']); ?></td>
-                                <td>
-                                    <?php echo $coupon['type'] === 'percentage' ? $coupon['value'] . '%' : formatPrice($coupon['value']); ?>
-                                </td>
-                                <td>
-                                    <?php echo $coupon['usage_count']; ?> / <?php echo $coupon['usage_limit'] ?? '∞'; ?>
-                                </td>
-                                <td>
-                                    <?php echo $coupon['end_date'] ? date('M d, Y', strtotime($coupon['end_date'])) : 'Never'; ?>
-                                </td>
-                                <td>
-                                    <span class="badge bg-<?php echo $coupon['status'] === 'active' ? 'success' : 'secondary'; ?>">
-                                        <?php echo ucfirst($coupon['status']); ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <a href="coupons.php?edit=<?php echo $coupon['id']; ?>" class="action-btn edit">
-                                        <i class="fas fa-pen"></i>
-                                    </a>
-                                    <a href="coupons.php?delete=<?php echo $coupon['id']; ?>" class="action-btn delete" onclick="return confirmDelete()">
-                                        <i class="fas fa-trash"></i>
-                                    </a>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
+<?php else: ?>
+<div class="admin-page-header">
+  <h1>Coupons <span class="badge badge-purple"><?= count($coupons) ?></span></h1>
+  <a href="?action=add" class="btn btn-primary">+ Add Coupon</a>
 </div>
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Min Order</th><th>Used/Limit</th><th>Expiry</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        <?php foreach ($coupons as $c): ?>
+        <tr>
+          <td style="font-weight:700;font-family:monospace"><?= e($c['code']) ?></td>
+          <td><?= ucfirst($c['type']) ?></td>
+          <td style="font-weight:600"><?= $c['type']==='percentage' ? $c['value'].'%' : formatPrice($c['value']) ?></td>
+          <td><?= $c['min_order'] > 0 ? formatPrice($c['min_order']) : '—' ?></td>
+          <td><?= $c['used_count'] ?>/<?= $c['usage_limit'] ?? '∞' ?></td>
+          <td style="font-size:.85rem"><?= $c['expiry_date'] ? date('M j, Y', strtotime($c['expiry_date'])) : 'No expiry' ?></td>
+          <td><span class="badge <?= $c['is_active']?'badge-success':'badge-danger' ?>"><?= $c['is_active']?'Active':'Disabled' ?></span></td>
+          <td>
+            <div class="action-buttons">
+              <a href="?edit=<?= $c['id'] ?>" class="btn btn-secondary btn-sm">Edit</a>
+              <a href="?toggle=<?= $c['id'] ?>" class="btn btn-sm <?= $c['is_active']?'btn-danger':'btn-primary' ?>"><?= $c['is_active']?'Disable':'Enable' ?></a>
+              <a href="?delete=<?= $c['id'] ?>&csrf_token=<?= e(csrfToken()) ?>" class="btn btn-danger btn-sm" onclick="return confirm('Delete coupon?')">🗑</a>
+            </div>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+        <?php if(empty($coupons)): ?><tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-muted)">No coupons yet.</td></tr><?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
 
-<?php include 'includes/footer.php'; ?>
+<?php include __DIR__ . '/partials/footer.php'; ?>

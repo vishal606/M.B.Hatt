@@ -1,181 +1,201 @@
-# MBHaat.com - Digital Product Selling Platform
+# MBHaat.com — Digital Product Selling Platform
+**Version:** 1.0 | **Stack:** PHP 8+ · MySQL · Bootstrap (mdbootstrap)  
+**Brand:** YBT Digital | **Palette:** Beige · Blue · Red · Purple Vintage
 
-A fully responsive digital product selling platform built with PHP, MySQL, and Material Design Bootstrap.
+---
 
-## Features
+## 🚀 Quick Install
 
-### User Side (Frontend)
-- **Responsive Landing Page** - Hero section, featured products, testimonials, FAQ
-- **Product Listing** - Grid/scrollable cards with filters (category, price, popularity) and search
-- **Product Details** - Title, description, screenshots, price, related products
-- **Shopping Cart** - Add/remove/update quantities
-- **Checkout** - Multiple payment methods, coupon codes, order summary
-- **User Dashboard** - Profile management, order history, secure downloads
-- **Authentication** - Login, registration, forgot password, profile editing
-- **Dark/Light Mode** - Full theme support
+### Option A — Install Wizard (Recommended)
+1. Upload the `mbhaat/` folder to your web server (e.g. `public_html/mbhaat/`)
+2. Visit `http://yourdomain.com/mbhaat/install.php`
+3. Follow the 3-step wizard
+4. **Delete `install.php`** after installation
 
-### Admin Side (Backend)
-- **Dashboard** - Sales stats, recent orders, top products
-- **Product Management** - Add/edit/delete products, file uploads
-- **Order Management** - View and update order statuses
-- **User Management** - View users, block/unblock
-- **Category Management** - Manage product categories
-- **Coupon Management** - Create flat/percentage discounts
-- **Reports & Analytics** - Daily/monthly sales reports
-- **Settings** - Payment gateway config, tax settings, branding
+### Option B — Manual Setup
+1. Create a MySQL database named `mbhaat`
+2. Import `database/schema.sql`
+3. Edit `src/config/config.php`:
+   ```php
+   define('DB_HOST', 'localhost');
+   define('DB_NAME', 'mbhaat');
+   define('DB_USER', 'your_user');
+   define('DB_PASS', 'your_password');
+   define('APP_URL', 'http://yourdomain.com/mbhaat');
+   ```
+4. Set `DEBUG_MODE` to `false` in production
+5. Ensure these directories are **writable** (chmod 755):
+   - `uploads/`
+   - `uploads/products/`
+   - `uploads/avatars/`
+   - `uploads/screenshots/`
 
-### Payment Gateways (Configurable)
-- bKash
-- Nagad
-- SSLCommerz
-- Bank Transfer
-- Visa Card
-- Master Card
+---
 
-## Tech Stack
+## 🔑 Default Admin Credentials
+- **URL:** `/admin/login.php`
+- **Email:** `admin@mbhaat.com`
+- **Password:** `password`
+> ⚠️ Change these immediately after first login via Admin → Settings
 
-- **Frontend**: PHP, HTML5, CSS3, JavaScript
-- **UI Framework**: Material Design Bootstrap (MDB UI Kit)
-- **Backend**: PHP 7.4+
-- **Database**: MySQL 5.7+
-- **Icons**: Font Awesome 6
+---
 
-## Installation
-
-### Prerequisites
-- PHP 7.4 or higher
-- MySQL 5.7 or higher
-- Apache/Nginx web server
-- mod_rewrite enabled
-
-### Step 1: Database Setup
-
-```bash
-# Create database in MySQL
-mysql -u root -p
-CREATE DATABASE mbhaat_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-exit
-
-# Import schema
-mysql -u root -p mbhaat_db < database/schema.sql
+## 📁 Project Structure
+```
+mbhaat/
+├── index.php              ← Homepage
+├── products.php           ← Product listing with filters
+├── product.php            ← Product detail page
+├── cart.php               ← Shopping cart (AJAX)
+├── checkout.php           ← Checkout + coupon + payment
+├── orders.php             ← Order history + secure download
+├── dashboard.php          ← User dashboard
+├── profile.php            ← Edit profile + password
+├── login.php              ← User login
+├── register.php           ← User registration
+├── forgot-password.php    ← Password reset
+├── logout.php
+├── contact.php            ← Support ticket form
+├── tickets.php            ← User ticket view/reply
+├── faq.php                ← FAQ accordion
+├── search.php             ← Product search
+├── download.php           ← Secure file download handler
+├── install.php            ← One-time setup wizard
+├── maintenance.php        ← Maintenance mode page
+├── .htaccess              ← Security rules
+│
+├── admin/
+│   ├── login.php          ← Admin login
+│   ├── logout.php
+│   ├── dashboard.php      ← Stats & recent activity
+│   ├── products.php       ← Add/Edit/Delete products
+│   ├── orders.php         ← View & update orders
+│   ├── users.php          ← Manage users (block/unblock)
+│   ├── coupons.php        ← Coupon CRUD
+│   ├── tickets.php        ← Support ticket management
+│   ├── faqs.php           ← FAQ management
+│   ├── categories.php     ← Category management
+│   ├── testimonials.php   ← Testimonial management
+│   ├── reports.php        ← Sales reports & analytics
+│   ├── settings.php       ← All site settings (payment, email, branding)
+│   ├── ajax.php           ← Admin AJAX handler
+│   └── partials/
+│       ├── header.php     ← Admin layout header + sidebar
+│       └── footer.php     ← Admin layout footer
+│
+├── src/
+│   ├── init.php           ← Bootstrap (loads config, DB, helpers)
+│   ├── config/
+│   │   ├── config.php     ← App configuration constants
+│   │   └── database.php   ← PDO database class
+│   ├── helpers/
+│   │   └── functions.php  ← All helper functions
+│   └── views/
+│       └── layouts/
+│           ├── header.php ← Site header + navbar + mobile appbar
+│           └── footer.php ← Site footer + bottom nav (mobile)
+│
+├── assets/
+│   ├── css/
+│   │   ├── style.css      ← Main stylesheet (brand colors, responsive)
+│   │   └── admin.css      ← Admin panel extras
+│   ├── js/
+│   │   └── app.js         ← Cart AJAX, dark mode, UI interactions
+│   └── images/
+│       └── logo.png       ← MBHaat logo
+│
+├── uploads/
+│   ├── products/          ← Uploaded product files (protected)
+│   ├── screenshots/       ← Product preview images
+│   ├── avatars/           ← User profile photos
+│   └── .htaccess          ← Blocks PHP execution in uploads
+│
+└── database/
+    └── schema.sql         ← Full database schema + seed data
 ```
 
-### Step 2: Configuration
+---
 
-1. Edit `includes/config.php` and update database credentials:
-```php
-$DB_HOST = 'localhost';
-$DB_NAME = 'mbhaat_db';
-$DB_USER = 'root';
-DB_PASS = 'your_password';
-```
+## 💳 Payment Gateways
+Configured via **Admin → Settings → Payment**:
 
-2. Update `APP_URL` in config.php to match your server:
-```php
-define('APP_URL', 'http://localhost/M.B>Hatt');
-```
+| Gateway     | Configuration |
+|-------------|---------------|
+| **bKash**   | Merchant mobile number |
+| **Nagad**   | Merchant mobile number |
+| **SSLCommerz** | Store ID + Merchant ID + Password |
+| **Bank Transfer** | Bank name + Account + Routing |
+| **Visa / Mastercard** | Processed via SSLCommerz |
 
-### Step 3: Upload Directories
+> Current implementation uses a **manual payment flow**: customer pays externally, enters transaction ID, admin verifies and updates order status.
 
-Ensure these directories are writable (755 permissions):
-- `assets/uploads/products/`
-- `assets/uploads/thumbnails/`
-- `assets/uploads/screenshots/`
+---
 
-### Step 4: Access the Application
+## 📱 Responsive Design
+- **Mobile** (< 768px): Native app experience with AppBar + Bottom Navigation (4 tabs)
+- **Tablet** (768–1024px): Adaptive grid layout
+- **Desktop** (> 1024px): Full navbar, sidebar, 3-4 column product grid
 
-- **User Site**: `http://localhost/M.B>Hatt/`
-- **Admin Panel**: Login with admin credentials
+### Dark Mode
+- Toggled via 🌙 button in navbar / AppBar
+- Persists via localStorage + cookie
+- Full dark palette applied to all components
 
-### Default Admin Account
-```
-Email: admin@mbhaat.com
-Password: admin123
-```
+---
 
-## Directory Structure
-
-```
-M.B>Hatt/
-├── admin/              # Admin dashboard
-│   ├── assets/         # Admin CSS/JS
-│   ├── includes/       # Admin header/footer
-│   ├── index.php       # Admin dashboard
-│   ├── products.php    # Product management
-│   ├── orders.php      # Order management
-│   ├── users.php       # User management
-│   ├── categories.php  # Category management
-│   ├── coupons.php     # Coupon management
-│   ├── reports.php     # Reports & analytics
-│   └── settings.php    # Site settings
-├── assets/             # Public assets
-│   ├── css/            # Stylesheets
-│   ├── js/             # JavaScript files
-│   ├── images/         # Image assets
-│   └── uploads/        # File uploads
-├── database/
-│   └── schema.sql      # Database schema
-├── includes/
-│   ├── config.php      # Configuration & helpers
-│   ├── header.php      # Site header
-│   └── footer.php      # Site footer
-├── pages/              # Public pages
-│   ├── login.php
-│   ├── register.php
-│   ├── forgot-password.php
-│   ├── products.php
-│   ├── product.php
-│   ├── cart.php
-│   ├── checkout.php
-│   ├── faq.php
-│   └── order-success.php
-├── user/               # User dashboard
-│   ├── dashboard.php
-│   ├── orders.php
-│   ├── order-detail.php
-│   ├── downloads.php
-│   ├── profile.php
-│   ├── change-password.php
-│   └── download.php
-├── payment/            # Payment processing
-├── secure_downloads/   # Protected downloads
-├── index.php           # Homepage
-└── .htaccess           # Security & URL rules
-```
-
-## Brand Colors
-
-| Color    | Hex       | Usage              |
-|----------|-----------|-------------------|
-| Beige    | #F7F6E5   | Background        |
-| Blue     | #76D2DB   | Accent / CTA      |
-| Red      | #DA4848   | Highlight / Alert |
-| Purple   | #36064D   | Primary / Brand   |
-
-## Security Features
-
-- Password hashing with bcrypt
-- CSRF protection on forms
+## 🔒 Security Features
+- CSRF tokens on all forms
+- Password hashing with `bcrypt`
+- Prepared statements (PDO) — SQL injection safe
+- Secure download tokens (64-char random hex)
+- Download limits & expiry dates
+- PHP execution blocked in uploads via `.htaccess`
 - Session-based authentication
-- Secure file downloads with token-based access
-- SQL injection prevention (prepared statements)
-- XSS prevention (output escaping)
-- File upload restrictions
-- Role-based admin access
+- Admin role separation (Super Admin / Editor)
+- User blocking capability
 
-## Responsive Design
+---
 
-- Mobile-first approach with Bootstrap 5
-- Material Design components
-- Mobile bottom navigation (Home, Products, Cart, Profile)
-- Desktop sidebar navigation
-- Adaptive product grid/list views
-- Touch-friendly buttons and cards
+## ⚙️ Admin Panel Features
+- **Dashboard** — Revenue, orders, users, top products
+- **Products** — Add/edit/delete, file upload, screenshots, categories, status toggle
+- **Orders** — View all orders, update payment/order status
+- **Users** — List users, view purchase history, block/unblock
+- **Coupons** — Flat & percentage discounts, expiry, usage limits
+- **Support Tickets** — View/reply to user messages, close tickets
+- **FAQs** — Add/edit/delete/reorder FAQ entries
+- **Categories** — Manage product categories
+- **Testimonials** — Customer review management
+- **Reports** — Revenue by period, top products, by payment method, daily sales
+- **Settings** — Payment gateways, tax, downloads, SMTP, branding, maintenance mode
 
-## License
+---
 
-This project is proprietary software for MBHaat.com.
+## 🛠️ PHP Requirements
+- PHP **8.0+** (uses `match`, `named args`, `enum`)
+- Extensions: `pdo`, `pdo_mysql`, `fileinfo`, `mbstring`
+- Apache with `mod_rewrite` (or Nginx equivalent)
 
-## Support
+---
 
-For support, contact: support@mbhaat.com
+## 📧 Email Setup
+Configure SMTP in **Admin → Settings → Email**:
+- Works with Gmail, Outlook, SendGrid, Mailgun
+- For Gmail: use App Password (not your regular password)
+- To enable actual email sending, integrate **PHPMailer** or **SwiftMailer**
+
+> The current codebase includes SMTP settings storage. Email sending implementation requires adding PHPMailer: `composer require phpmailer/phpmailer`
+
+---
+
+## 🔧 Customization
+- **Brand colors**: Edit CSS variables in `assets/css/style.css` (`:root`)
+- **Logo**: Upload via Admin → Settings → Branding
+- **Currency**: Set symbol & code in Admin → Settings → General
+- **Add payment gateways**: Extend `checkout.php` with gateway SDK calls
+
+---
+
+## 📄 License
+Built for **YBT Digital** — MBHaat.com  
+For private/commercial use. All rights reserved.
